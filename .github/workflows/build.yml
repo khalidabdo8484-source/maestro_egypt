@@ -1,5 +1,8 @@
 name: build
-on: [push]
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -11,13 +14,11 @@ jobs:
           java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.3'
-      - run: |
-          rm -rf android
-          flutter create -t app --project-name maestro_egypt --platforms android .
-          flutter pub get
-          flutter build apk --release
+          flutter-version: '3.22.0'
+          channel: 'stable'
+      - run: flutter pub get
+      - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
-          name: MAESTRO-APK
+          name: 3ADAD-BILL-APK
           path: build/app/outputs/flutter-apk/app-release.apk
