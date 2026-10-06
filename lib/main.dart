@@ -12,7 +12,6 @@ class _BillState extends State<BillApp> {
   Map<String, dynamic>? result;
   Map<String, dynamic>? resultFromMoney;
   bool scanning = false;
-  bool isCardMode = true; // true = عداد كارت
   final picker = ImagePicker();
   final textRec = TextRecognizer(script: TextRecognitionScript.latin);
 
@@ -29,12 +28,18 @@ class _BillState extends State<BillApp> {
     return {'kwh':c,'energy':t,'service':s,'nzafa':nf,'total':t+s+nf,'shariha':sh};
   }
 
-  // يحسب كام كيلو هتاخد بفلوس معينة
+  Map<String, dynamic> getNextTier(double c){
+    if(c <= 50) return {'next': 'الثانية', 'limit': 50, 'remain': 50 - c, 'priceNext': 0.78, 'priceNow': 0.68};
+    if(c <= 100) return {'next': 'الثالثة', 'limit': 100, 'remain': 100 - c, 'priceNext': 0.95, 'priceNow': 0.78};
+    if(c <= 200) return {'next': 'الرابعة', 'limit': 200, 'remain': 200 - c, 'priceNext': 1.55, 'priceNow': 0.95};
+    if(c <= 350) return {'next': 'الخامسة', 'limit': 350, 'remain': 350 - c, 'priceNext': 1.95, 'priceNow': 1.55};
+    if(c <= 650) return {'next': 'السادسة', 'limit': 650, 'remain': 650 - c, 'priceNext': 2.10, 'priceNow': 1.95};
+    if(c <= 1000) return {'next': 'السابعة', 'limit': 1000, 'remain': 1000 - c, 'priceNext': 2.23, 'priceNow': 2.10};
+    return {'next': 'الأخيرة', 'limit': 1000, 'remain': 0, 'priceNext': 2.23, 'priceNow': 2.23};
+  }
+
   double calcKwhFromMoney(double money){
-    // بنجرب من 1 لحد 2000 كيلو
-    for(int i=1;i<2000;i++){
-      if(calc(i.toDouble())['total'] >= money) return i.toDouble();
-    }
+    for(int i=1;i<2000;i++){ if(calc(i.toDouble())['total'] >= money) return i.toDouble(); }
     return money / 2.23;
   }
 
@@ -42,9 +47,7 @@ class _BillState extends State<BillApp> {
     double c = double.tryParse(kwhCtrl.text)??0;
     setState(()=>result=calc(c));
     double m = double.tryParse(amountCtrl.text)??0;
-    if(m>0){
-      setState(()=>resultFromMoney={'money':m,'kwh':calcKwhFromMoney(m)});
-    }
+    if(m>0){ setState(()=>resultFromMoney={'money':m,'kwh':calcKwhFromMoney(m)}); }
   }
 
   Future<void> pickImage() async {
@@ -60,7 +63,7 @@ class _BillState extends State<BillApp> {
       if(nums.isNotEmpty){
         setState(()=>kwhCtrl.text = nums.last.toInt().toString());
         doCalc();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('قرأت: ${nums.last.toInt()} ك.و.س'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('قرأت: ${nums.last.toInt()} كيلو'), backgroundColor: Colors.green));
       }
     }catch(e){}
     setState(()=>scanning=false);
@@ -74,50 +77,12 @@ class _BillState extends State<BillApp> {
       backgroundColor: Color(0xFF0F172A),
       appBar: AppBar(backgroundColor: Colors.black, centerTitle: true, title: Text('⚡ عداد الكارت', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))),
       body: ListView(padding: EdgeInsets.all(16), children: [
-        // خانة الاستهلاك بالكاميرا
         Container(padding: EdgeInsets.all(16), decoration: BoxDecoration(color: Color(0xFF1E293B), borderRadius: BorderRadius.circular(16)), child: Column(children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text('الاستهلاك هذا الشهر (ك.و.س)', style: TextStyle(color: Colors.white70)),
-            Icon(Icons.credit_card, color: Colors.amber)
-          ]),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('الاستهلاك هذا الشهر (ك.و.س)', style: TextStyle(color: Colors.white70, fontSize: 13)), Icon(Icons.credit_card, color: Colors.amber)]),
           SizedBox(height:10),
-          TextField(controller: kwhCtrl, keyboardType: TextInputType.number, onChanged: (_)=>doCalc(), style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold), decoration: InputDecoration(
-            hintText: 'مثال: 200',
-            hintStyle: TextStyle(color: Colors.white24),
-            suffixIcon: IconButton(icon: Icon(Icons.camera_alt, color: Colors.amber, size: 28), onPressed: pickImage),
-            filled: true, fillColor: Colors.black26, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)
-          )),
+          TextField(controller: kwhCtrl, keyboardType: TextInputType.number, onChanged: (_)=>doCalc(), style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold), decoration: InputDecoration(hintText: 'مثال: 200', hintStyle: TextStyle(color: Colors.white24), suffixIcon: IconButton(icon: Icon(Icons.camera_alt, color: Colors.amber, size: 28), onPressed: pickImage), filled: true, fillColor: Colors.black26, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none))),
           SizedBox(height:12),
-          SizedBox(width: double.infinity, child: ElevatedButton(onPressed: doCalc, style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, padding: EdgeInsets.all(14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text(scanning?'بقرأ العداد...':'احسب الفاتورة', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)))),
+          SizedBox(width: double.infinity, child: ElevatedButton(onPressed: doCalc, style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, padding: EdgeInsets.all(14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text(scanning?'بقرأ العداد... 🔍':'احسب الفاتورة', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)))),
         ])),
 
-        if(result!=null) ...[
-          SizedBox(height:16),
-          Container(padding: EdgeInsets.all(16), decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF59E0B), Color(0xFFD97706)]), borderRadius: BorderRadius.circular(16)), child: Column(children: [
-            Text('هتدفع', style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)),
-            Text('${result!['total'].toStringAsFixed(2)} جنيه', style: TextStyle(color: Colors.black, fontSize: 36, fontWeight: FontWeight.w900)),
-            Container(margin: EdgeInsets.only(top:8), padding: EdgeInsets.symmetric(horizontal:14, vertical:6), decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(20)), child: Text('الشريحة ${result!['shariha']}', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))),
-            SizedBox(height:10),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-              Text('طاقة: ${result!['energy'].toStringAsFixed(0)}ج', style: TextStyle(color: Colors.black87)),
-              Text('خدمة: ${result!['service']}ج', style: TextStyle(color: Colors.black87)),
-              Text('نظافة: ${result!['nzafa']}ج', style: TextStyle(color: Colors.black87)),
-            ])
-          ])),
-        ],
-
-        SizedBox(height:16),
-        // ميزة الكارت - اشحن بكام يديك كام كيلو
-        Container(padding: EdgeInsets.all(16), decoration: BoxDecoration(color: Color(0xFF1E293B), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.amber.withOpacity(0.3))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('💳 لو هتشحن بكام؟', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
-          SizedBox(height:10),
-          Row(children: [
-            Expanded(child: TextField(controller: amountCtrl, keyboardType: TextInputType.number, onChanged: (_)=>doCalc(), style: TextStyle(color: Colors.white), decoration: InputDecoration(labelText: 'المبلغ جنيه', labelStyle: TextStyle(color: Colors.white54), filled: true, fillColor: Colors.black26, border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)))),
-            SizedBox(width:10),
-            if(resultFromMoney!=null) Container(padding: EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.green.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), child: Text('≈ ${resultFromMoney!['kwh'].toInt()} كيلو', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 16)))
-          ])
-        ]))
-      ]),
-    );
-  }
-}
+        if(result!=null) ...
