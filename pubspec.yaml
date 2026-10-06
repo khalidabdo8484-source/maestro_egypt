@@ -1,7 +1,7 @@
 name: addad_bill
-description: 3adad Electricity Bill with Camera
+description: 3adad Electricity Bill - Card Meter
 publish_to: 'none'
-version: 1.0.0+2
+version: 1.0.0+3
 environment:
   sdk: '>=3.0.0 <4.0.0'
 dependencies:
@@ -9,8 +9,6 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.2
   image_picker: ^1.0.8
-  google_mlkit_text_recognition: ^0.13.1
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
