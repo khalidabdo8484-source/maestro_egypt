@@ -8,23 +8,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
+          
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.0'
+          flutter-version: '3.24.5'
           channel: 'stable'
-      
-      # ده السطر السحري اللي هيصلح الـ Gradle
-      - run: |
-          rm -rf android
-          flutter create . --project-name addad_bill --platforms=android
+          cache: true
+          
+      - name: Fix android folder completely
+        run: |
+          rm -rf android ios web macos linux windows test
+          flutter create . --project-name addad_bill --platforms=android --org com.example
+          cat pubspec.yaml
           flutter pub get
-      
-      - run: flutter build apk --release
+          
+      - name: Build APK
+        run: flutter build apk --release --verbose
+          
       - uses: actions/upload-artifact@v4
         with:
-          name: 3ADAD-BILL-APK
+          name: 3ADAD-BILL-CARD-APK
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
