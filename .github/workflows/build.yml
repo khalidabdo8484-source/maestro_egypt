@@ -16,7 +16,13 @@ jobs:
         with:
           flutter-version: '3.22.0'
           channel: 'stable'
-      - run: flutter pub get
+      
+      # ده السطر السحري اللي هيصلح الـ Gradle
+      - run: |
+          rm -rf android
+          flutter create . --project-name addad_bill --platforms=android
+          flutter pub get
+      
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
