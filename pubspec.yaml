@@ -1,5 +1,5 @@
-name: maestro_egypt
-description: MAESTRO Egypt - Traffic Analysis
+name: addad_bill
+description: 3adad Electricity Bill
 publish_to: 'none'
 version: 1.0.0+1
 environment:
