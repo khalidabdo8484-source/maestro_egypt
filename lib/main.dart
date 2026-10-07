@@ -1,77 +1,169 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'dart:io';
+import 'package:flutter/services.dart';
+import 'dart:async';
+import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:audioplayers/audioplayers.dart';
 
-void main() => runApp(MaterialApp(debugShowCheckedModeBanner: false, home: BillApp()));
-class BillApp extends StatefulWidget { @override State<BillApp> createState() => _BillState(); }
+void main() => runApp(MaterialApp(debugShowCheckedModeBanner: false, home: SellemGameV2()));
 
-class _BillState extends State<BillApp> {
-  final kwhCtrl = TextEditingController(text: '200');
-  final amountCtrl = TextEditingController(text: '500');
-  Map<String, dynamic>? result;
-  Map<String, dynamic>? resultFromMoney;
-  XFile? meterImage;
-  final picker = ImagePicker();
+class FloorData {
+  String name; String shopEmoji; String orderEmoji; String orderName; Color color;
+  FloorData(this.name, this.shopEmoji, this.orderEmoji, this.orderName, this.color);
+}
 
-  Map<String,dynamic> calc(double c){
-    double t=0,s=0; String sh='';
-    if(c<=50){t=c*0.68; sh='الأولى (موفر)'; s=1;}
-    else if(c<=100){t=50*0.68+(c-50)*0.78; sh='الثانية (موفر)'; s=2;}
-    else if(c<=200){t=c*0.95; sh='الثالثة'; s=6;}
-    else if(c<=350){t=200*0.95+(c-200)*1.55; sh='الرابعة'; s=11;}
-    else if(c<=650){t=200*0.95+150*1.55+(c-350)*1.95; sh='الخامسة'; s=15;}
-    else if(c<=1000){t=200*0.95+150*1.55+300*1.95+(c-650)*2.10; sh='السادسة (عالي)'; s=25;}
-    else {t=c*2.23; sh='السابعة (خراب بيوت)'; s=40;}
-    double nf = c<=200?3:c<=650?5:10;
-    return {'kwh':c,'energy':t,'service':s,'nzafa':nf,'total':t+s+nf,'shariha':sh};
+class Obstacle {
+  double x; double y; String emoji; String type; double speed; int lane;
+  Obstacle({required this.x, required this.y, required this.emoji, required this.type, required this.speed, required this.lane});
+}
+
+class SellemGameV2 extends StatefulWidget { @override State<SellemGameV2> createState() => _SState(); }
+
+class _SState extends State<SellemGameV2> {
+  int lane = 1;
+  List<Obstacle> obs = [];
+  int floor = 1;
+  int lives = 3;
+  int score = 0;
+  int highFloor = 1;
+  bool playing = false;
+  bool delivering = false;
+  Timer? loop; Timer? spawn;
+  Random r = Random();
+  double speed = 0.018;
+  int timeInFloor = 0;
+  final AudioPlayer player = AudioPlayer();
+
+  final floors = [
+    FloorData("بقالة الحاج", "🥖", "🥖", "عيش", Color(0xFFFDE68A)),
+    FloorData("كلب الحراسة", "🦴", "🦴", "عظمة للكلب", Color(0xFFFECACA)),
+    FloorData("غسيل أم أحمد", "👕", "🧷", "مشبك", Color(0xFFBFDBFE)),
+    FloorData("قهوة المعلم", "☕", "☕", "شاي", Color(0xFFD6C7B8)),
+    FloorData("خضري عم عبده", "🍅", "🍅", "طماطم", Color(0xFFBBF7D0)),
+    FloorData("دش و تليفزيون", "📺", "🔋", "حجارة", Color(0xFFE9D5FF)),
+    FloorData("مسحوق غسيل", "🧼", "🧼", "اريال", Color(0xFFA7F3D0)),
+    FloorData("عطار", "🌶️", "🌶️", "شطة", Color(0xFFFDBA74)),
+    FloorData("صبار", "🌵", "💧", "مية للصبار", Color(0xFF86EFAC)),
+    FloorData("عشة الحمام", "🕊️", "🌾", "قمح للحمام", Color(0xFF93C5FD)),
+  ];
+
+  Future<void> playSound(String file) async {
+    try { await player.play(AssetSource('sounds/$file')); } catch(e){ /* لو مفيش ملفات هيعمل هزاز بس */ }
   }
-  Map<String, dynamic> getNextTier(double c){
-    if(c <= 50) return {'next': 'الثانية', 'limit': 50, 'remain': 50 - c, 'priceNext': 0.78, 'priceNow': 0.68};
-    if(c <= 100) return {'next': 'الثالثة', 'limit': 100, 'remain': 100 - c, 'priceNext': 0.95, 'priceNow': 0.78};
-    if(c <= 200) return {'next': 'الرابعة', 'limit': 200, 'remain': 200 - c, 'priceNext': 1.55, 'priceNow': 0.95};
-    if(c <= 350) return {'next': 'الخامسة', 'limit': 350, 'remain': 350 - c, 'priceNext': 1.95, 'priceNow': 1.55};
-    if(c <= 650) return {'next': 'السادسة', 'limit': 650, 'remain': 650 - c, 'priceNext': 2.10, 'priceNow': 1.95};
-    if(c <= 1000) return {'next': 'السابعة', 'limit': 1000, 'remain': 1000 - c, 'priceNext': 2.23, 'priceNow': 2.10};
-    return {'next': 'الأخيرة', 'limit': 1000, 'remain': 0, 'priceNext': 2.23, 'priceNow': 2.23};
+
+  void start(){
+    lane=1; obs.clear(); floor=1; lives=3; score=0; timeInFloor=0; speed=0.018; playing=true; delivering=false;
+    loadHigh();
+    loop?.cancel(); spawn?.cancel();
+    loop = Timer.periodic(Duration(milliseconds: 16), (t){
+      if(!playing || delivering) return;
+      setState((){
+        timeInFloor++;
+        for(var o in obs) o.y += o.speed;
+        obs.removeWhere((o)=> o.y > 1.2);
+        obs.removeWhere((o){
+          bool hit = o.lane == lane && o.y > 0.65 && o.y < 0.9;
+          if(hit){
+            if(o.type=="heart"){ lives=(lives+1).clamp(0,5); score+=20; playSound('ding.mp3'); HapticFeedback.mediumImpact(); }
+            else {
+              lives--; 
+              if(o.emoji=="🐕") playSound('bark.mp3');
+              else if(o.emoji=="🪣") playSound('splash.mp3');
+              else if(o.emoji=="👶") playSound('baby.mp3');
+              else HapticFeedback.heavyImpact();
+            }
+            return true;
+          }
+          return false;
+        });
+        if(timeInFloor > 400){ startDelivery(); }
+        if(lives<=0) gameOver();
+      });
+    });
+    spawn = Timer.periodic(Duration(milliseconds: 750), (t){
+      if(!playing || delivering) return;
+      int l = r.nextInt(3);
+      String emoji = "🐕"; String type="bad";
+      double rr = r.nextDouble();
+      if(rr < 0.3) emoji="🐕";
+      else if(rr < 0.5) emoji="🪣";
+      else if(rr < 0.65) emoji="👕";
+      else if(rr < 0.75) emoji="👶";
+      else if(rr < 0.85) { emoji="❤️"; type="heart"; }
+      else emoji="🧹";
+      setState(()=> obs.add(Obstacle(x: -0.7 + l*0.7, y: -1.2, emoji: emoji, type: type, speed: speed + r.nextDouble()*0.012, lane: l)));
+    });
   }
-  double calcKwhFromMoney(double money){ for(int i=1;i<2000;i++){ if(calc(i.toDouble())['total'] >= money) return i.toDouble(); } return money / 2.23; }
-  void doCalc(){ double c = double.tryParse(kwhCtrl.text)??0; setState(()=>result=calc(c)); double m = double.tryParse(amountCtrl.text)??0; if(m>0){ setState(()=>resultFromMoney={'money':m,'kwh':calcKwhFromMoney(m)}); } }
-  Future<void> pickImage() async { final XFile? img = await picker.pickImage(source: ImageSource.camera); if(img!=null) setState(()=>meterImage=img); }
-  @override void initState(){ super.initState(); doCalc(); }
+
+  void startDelivery() async {
+    delivering = true;
+    await playSound('ding.mp3');
+    setState((){ score+=100; });
+    await Future.delayed(Duration(milliseconds: 1200));
+    if(!playing) return;
+    setState((){
+      // لو وصلت ومعاك الأوردر الصح
+      score+=200; // بونص المحل
+      floor++;
+      timeInFloor=0;
+      speed+=0.004;
+      obs.clear();
+      delivering=false;
+      if(floor>10) win();
+    });
+  }
+
+  void gameOver(){ playing=false; delivering=false; loop?.cancel(); spawn?.cancel(); saveHigh(); }
+  void win(){ playing=false; delivering=false; loop?.cancel(); spawn?.cancel(); score+=500; saveHigh(); }
+  Future<void> loadHigh() async { var p=await SharedPreferences.getInstance(); setState(()=> highFloor = p.getInt('highFloor')??1); }
+  Future<void> saveHigh() async { var p=await SharedPreferences.getInstance(); if(floor>highFloor){ p.setInt('highFloor', floor); setState(()=> highFloor=floor); } }
+
   @override Widget build(BuildContext context){
+    double stairLeft(int l) => -0.75 + l*0.75;
+    var cur = floors[(floor-1).clamp(0,9)];
     return Scaffold(
-      backgroundColor: Color(0xFF0F172A),
-      appBar: AppBar(backgroundColor: Colors.black, centerTitle: true, title: Text('⚡ عداد الكارت', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))),
-      body: ListView(padding: EdgeInsets.all(16), children: [
-        Container(padding: EdgeInsets.all(16), decoration: BoxDecoration(color: Color(0xFF1E293B), borderRadius: BorderRadius.circular(16)), child: Column(children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('الاستهلاك هذا الشهر (ك.و.س)', style: TextStyle(color: Colors.white70, fontSize: 13)), Icon(Icons.credit_card, color: Colors.amber)]),
-          SizedBox(height:10),
-          TextField(controller: kwhCtrl, keyboardType: TextInputType.number, onChanged: (_)=>doCalc(), style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold), decoration: InputDecoration(hintText: 'مثال: 200', hintStyle: TextStyle(color: Colors.white24), suffixIcon: IconButton(icon: Icon(Icons.camera_alt, color: Colors.amber, size: 28), onPressed: pickImage), filled: true, fillColor: Colors.black26, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none))),
-          if(meterImage!=null) ...[SizedBox(height:10), ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(File(meterImage!.path), height: 150, width: double.infinity, fit: BoxFit.cover)),],
-          SizedBox(height:12),
-          SizedBox(width: double.infinity, child: ElevatedButton(onPressed: doCalc, style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, padding: EdgeInsets.all(14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text('احسب الفاتورة', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)))),
-        ])),
-        if(result!=null) ...[
-          SizedBox(height:16),
-          Container(padding: EdgeInsets.all(16), decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF59E0B), Color(0xFFD97706)]), borderRadius: BorderRadius.circular(16)), child: Column(children: [
-            Text('هتدفع', style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)), Text('${result!['total'].toStringAsFixed(2)} جنيه', style: TextStyle(color: Colors.black, fontSize: 36, fontWeight: FontWeight.w900)),
-            Container(margin: EdgeInsets.only(top:8), padding: EdgeInsets.symmetric(horizontal:14, vertical:6), decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(20)), child: Text('الشريحة ${result!['shariha']}', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))),
+      backgroundColor: cur.color,
+      body: GestureDetector(
+        onTapDown: (d){ if(!playing) return; if(d.localPosition.dx < MediaQuery.of(context).size.width/2) setState(()=> lane=(lane-1).clamp(0,2)); else setState(()=> lane=(lane+1).clamp(0,2)); },
+        child: Stack(children: [
+          // خلفية
+          Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [cur.color, Colors.white]))),
+          Align(alignment: Alignment(0,0), child: Container(width: 320, height: double.infinity, decoration: BoxDecoration(color: Color(0xFFE7C9A9)), child: CustomPaint(painter: StairsPainter()))),
+          if(playing) ...obs.map((o)=> Align(alignment: Alignment(stairLeft(o.lane), o.y), child: Text(o.emoji, style: TextStyle(fontSize: 34, shadows: [Shadow(blurRadius: 4, color: Colors.black26)])))),
+          Align(alignment: Alignment(stairLeft(lane), 0.8), child: AnimatedScale(scale: delivering?1.3:1.0, duration: Duration(milliseconds: 200), child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if(delivering) Container(padding: EdgeInsets.symmetric(horizontal:8, vertical:2), decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(20)), child: Text('وصلت! ${cur.orderEmoji}', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+            Text('🧑‍🍳', style: TextStyle(fontSize: 50)),
+            Container(padding: EdgeInsets.all(3), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all()), child: Text(cur.orderEmoji, style: TextStyle(fontSize: 16))),
+          ]))),
+          SafeArea(child: Column(children: [
+            Container(margin: EdgeInsets.all(12), padding: EdgeInsets.all(14), decoration: BoxDecoration(color: Color(0xFF111827), borderRadius: BorderRadius.circular(18)), child: Column(children: [
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${cur.shopEmoji} ${cur.name}', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text('الدور $floor / 10 - وصل: ${cur.orderName} ${cur.orderEmoji}', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                ]),
+                Column(children: [Row(children: List.generate(3, (i)=> Icon(Icons.favorite, color: i<lives?Colors.red:Colors.white10, size: 18))), Text('⭐ $score', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))]),
+              ]),
+              SizedBox(height:8),
+              LinearProgressIndicator(value: timeInFloor/400, color: Colors.amber, backgroundColor: Colors.white12, minHeight: 6, borderRadius: BorderRadius.circular(10)),
+            ])),
+            if(delivering) Container(margin: EdgeInsets.only(top:20), padding: EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(12)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.check, color: Colors.white), SizedBox(width:6), Text('بتسلم الأوردر لـ ${cur.name}...', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))])),
+            Spacer(),
+            if(!playing) Container(margin: EdgeInsets.all(16), padding: EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(blurRadius: 20, color: Colors.black26)]), child: Column(children: [
+              Text(floor>10?'🎉 خلصت العمارة!':'🏢 السلم والدور V2', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+              SizedBox(height:8),
+              Text(floor>10?'انت بطل التوصيل في المنطقة!':'كل دور محل حقيقي ولازم توصل طلبه\n🐕 ادي الكلب عظمة\n🪣 خلي بالك من جردل المية\n👶 متخبطش العيال', textAlign: TextAlign.center, style: TextStyle(color: Colors.black54, height: 1.4)),
+              SizedBox(height:14),
+              SizedBox(width: double.infinity, child: ElevatedButton(onPressed: start, style: ElevatedButton.styleFrom(backgroundColor: Colors.black, padding: EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), child: Text(floor>10?'العب تاني':'اطلع يا بطل 🚀', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)))),
+            ])),
           ])),
-          SizedBox(height:12),
-          Builder(builder: (context){
-            var next = getNextTier(result!['kwh']); double remain = next['remain']; bool danger = remain <= 30 && remain > 0; if(remain <= 0) return SizedBox();
-            return Container(padding: EdgeInsets.all(14), decoration: BoxDecoration(color: danger ? Colors.red.withOpacity(0.15) : Colors.green.withOpacity(0.12), borderRadius: BorderRadius.circular(12), border: Border.all(color: danger ? Colors.redAccent : Colors.greenAccent, width: 1.2)), child: Column(children: [
-              Row(children: [Icon(danger ? Icons.warning_amber_rounded : Icons.battery_charging_full, color: danger ? Colors.redAccent : Colors.greenAccent, size: 28), SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('فاضلك ${remain.toInt()} كيلو وتدخل الشريحة ${next['next']}', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)), SizedBox(height: 3), Text('سعر الكيلو هيزيد من ${next['priceNow']}ج إلى ${next['priceNext']}ج', style: TextStyle(color: Colors.white70, fontSize: 12))]))]),
-              SizedBox(height: 10), ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: (result!['kwh'] / next['limit']).clamp(0,1).toDouble(), backgroundColor: Colors.white12, color: danger ? Colors.redAccent : Colors.amber, minHeight: 7)),
-            ]));
-          }),
-        ],
-        SizedBox(height:16),
-        Container(padding: EdgeInsets.all(16), decoration: BoxDecoration(color: Color(0xFF1E293B), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.amber.withOpacity(0.3))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('💳 لو هتشحن بكام؟', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)), SizedBox(height:10),
-          Row(children: [Expanded(child: TextField(controller: amountCtrl, keyboardType: TextInputType.number, onChanged: (_)=>doCalc(), style: TextStyle(color: Colors.white), decoration: InputDecoration(labelText: 'المبلغ جنيه', labelStyle: TextStyle(color: Colors.white54), filled: true, fillColor: Colors.black26, border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)))), SizedBox(width:10), if(resultFromMoney!=null) Container(padding: EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.green.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), child: Text('≈ ${resultFromMoney!['kwh'].toInt()} كيلو', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 16)))])
-        ]))
-      ]),
+        ]),
+      ),
     );
   }
+}
+
+class StairsPainter extends CustomPainter {
+  @override void paint(Canvas c, Size s){ var p=Paint()..color=Colors.black.withOpacity(0.1)..strokeWidth=1.5..style=PaintingStyle.stroke; for(double y=0; y<s.height; y+=45) c.drawLine(Offset(0,y), Offset(s.width,y), p); c.drawLine(Offset(s.width/3,0), Offset(s.width/3,s.height), p); c.drawLine(Offset(s.width*2/3,0), Offset(s.width*2/3,s.height), p); }
+  @override bool shouldRepaint(covariant CustomPainter old)=> false;
 }
