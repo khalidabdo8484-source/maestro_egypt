@@ -14,16 +14,17 @@ jobs:
           java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.19.6'
           channel: 'stable'
-      - name: Fix android
+          cache: true
+      - name: Recreate Android Project
         run: |
           rm -rf android ios web macos linux windows test
-          flutter create . --project-name sellem_game --platforms=android --org com.example
+          flutter create . --project-name sellem_game --platforms=android --org com.example.sellem
           flutter pub get
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --no-tree-shake-icons
       - uses: actions/upload-artifact@v4
         with:
-          name: SELLEM-GAME-APK
+          name: SELLEM-V3-APK
           path: build/app/outputs/flutter-apk/app-release.apk
