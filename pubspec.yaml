@@ -1,15 +1,16 @@
 name: sellem_game
-description: El Selem Wel Dor V2 Pro with Sounds
+description: El Selem Wel Dor V3 Real Building
 publish_to: 'none'
-version: 1.0.1+2
+version: 1.0.2+3
 environment:
   sdk: '>=3.0.0 <4.0.0'
 dependencies:
   flutter:
     sdk: flutter
   shared_preferences: ^2.2.2
-  audioplayers: ^6.0.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
 flutter:
   uses-material-design: true
-  assets:
-        - assets/sounds/
